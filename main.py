@@ -45,7 +45,8 @@ class CheckThread(Thread):
         self.y = 0
         self.z = 0
 
-    def cut(self, temp):    # eliminating non_zero values from released pad
+    @staticmethod
+    def cut(temp):    # eliminating non_zero values from released pad
         if abs(temp) > 2000:
             c = temp / 400
         else:
@@ -107,86 +108,90 @@ def set_pids(s, ser):
         ser.write(msg.encode('utf-8'))
 
 
-def main():
-    last_time = 0
-    s1 = ServoSettings(100, 80, 4, 1.5, 0.5)
-    s2 = ServoSettings(200, 80, 3.7, 1.8, 0.5)
-    s = [s1, s2]
-    send = Button(150, 160, 70, 40, "green", "send")
-    debug = Button(150, 220, 70, 40, "blue", "debug")
-    quit = Button(150, 280, 70, 40, "red", "quit")
-    b = [send, debug, quit]
+class Gasper:
+    def __init__(self):
+        self.s = []  # servo settings objects
+        self.srs = []   # serial port objects
+        self.w1 = MyGraphWin("dcServo", 400, 600)
+        self.pad = CheckThread()  # starting gamepad listener thread
+        self.pad.start()
 
-    w1 = MyGraphWin("dcServo", 400, 600)
-    l_c_point = None  # last clicked point
-    ser1 = connect('COM3', w1)  # connecting to servo1  '/dev/ttyUSB0' for linux
-    ser2 = connect('COM5', w1)
-    serials = [ser1, ser2]
+        self.s.append(ServoSettings(100, 80, 4, 1.5, 0.5))
+        self.s.append(ServoSettings(200, 80, 3.7, 1.8, 0.5))
+        self.srs.append(connect('COM3', self.w1))
+        self.srs.append(connect('COM5', self.w1))
 
-    display(w1, s, b)
-    pad = CheckThread()  # starting gamepad listener thread
-    pad.start()
+    def run(self):
+        last_time = 0
+        coords = [0, 0]  # manipulator coordinates
+        send = Button(150, 160, 70, 40, "green", "send")
+        debug = Button(150, 220, 70, 40, "blue", "debug")
+        quit = Button(150, 280, 70, 40, "red", "quit")
+        b = [send, debug, quit]
 
-    coords = [0, 0]  # manipulator coordinates
+        l_c_point = None  # last clicked point
 
-    while True:
-        c_point = w1.win.checkMouse()
-        if (c_point != l_c_point) and (c_point is not None):
-            if inside(c_point, send):
-                print("sending PID settings\n\n")
-                set_pids(s1, ser1)
-                set_pids(s2, ser2)
-            elif inside(c_point, quit):
-                for i in serials:
-                    i.close()
-                pad.stop()
-                pad.join()
-                w1.win.close()
+        self.w1.display(self.s, b)
+
+        while True:
+            c_point = self.w1.win.checkMouse()
+            if (c_point != l_c_point) and (c_point is not None):
+                if inside(c_point, send):
+                    print("sending PID settings\n\n")
+                    set_pids(self.s[0], self.srs[0])
+                    set_pids(self.s[1], self.srs[1])
+                elif inside(c_point, quit):
+                    self.end()
+                    break
+                elif inside(c_point, debug):
+                    for i in self.srs:
+                        i.write(b'sndtogRQ')
+                l_c_point = c_point
+
+            if self.pad.pressed_up:
+                print("up")
+                self.srs[0].write(b"setuRQ")
+                self.pad.pressed_up = False
+
+            if self.pad.pressed_down:
+                print("down")
+                self.srs[0].write(b"setdRQ")
+                self.pad.pressed_down = False
+
+            now = time.time()
+            # ten times per second send new cords
+            if now - last_time > 0.1 and (self.pad.x != 0 or self.pad.y != 0 or self.pad.z != 0):
+                coords[0] += self.pad.x
+                coords[1] += self.pad.y
+
+                self.srs[0].write(b"sete{}RQ".format(self.pad.x))  # driving joint by adding a number to its position
+                self.srs[1].write(b"sete{}RQ".format(self.pad.y))
+                self.srs[1].write(b"setz{}RQ".format(self.pad.z * 0.385))  # limiting to <-255 ; 255>
+                last_time = now
+
+            if self.pad.quit_button:
+                self.end()
                 break
-            elif inside(c_point, debug):
-                for i in serials:
-                    i.write(b'sndtogRQ')
-            l_c_point = c_point
 
-        if pad.pressed_up:
-            print("up")
-            ser1.write(b"setuRQ")
-            pad.pressed_up = False
+            key = self.w1.win.checkKey()
+            if key is not None:
+                if key == "Up":
+                    self.srs[0].write(b"setuRQ")
+                if key == "Down":
+                    self.srs[0].write(b"setdRQ")
 
-        if pad.pressed_down:
-            print("down")
-            ser1.write(b"setdRQ")
-            pad.pressed_down = False
+            read_from_serial(self.srs[0], "servo1")
+            read_from_serial(self.srs[1], "servo2")
 
-        now = time.time()
-        if now - last_time > 0.1 and (pad.x != 0 or pad.y != 0 or pad.z != 0):  # ten times per second send new cords
-            coords[0] += pad.x
-            coords[1] += pad.y
-
-            ser1.write(b"sete{}RQ".format(pad.x))  # driving joint by adding a number to its position
-            ser2.write(b"sete{}RQ".format(pad.y))
-            ser2.write(b"setz{}RQ".format(pad.z * 0.385))  # limiting to <-255 ; 255>
-            last_time = now
-
-        if pad.quit_button:
-            for i in serials:
-                i.close()
-            pad.stop()
-            pad.join()
-            w1.win.close()
-            break
-
-        # key = w1.win.checkKey()
-        # if key is not None:
-        #     if key == "Up":
-        #         ser1.write(b"setuRQ")
-        #     if key == "Down":
-        #         ser1.write(b"setdRQ")
-
-        read_from_serial(ser1, "servo1")
-        # read_from_serial(ser2, "servo2")
+    def end(self):
+        for i in self.srs:
+            i.close()
+        self.pad.stop()
+        self.pad.join()
+        self.w1.win.close()
 
 
-main()
+gasper = Gasper()
+gasper.run()
 
-# TODO:  dodac kontrole tego czy to co jest w polach PID to sa liczby
+# TODO:

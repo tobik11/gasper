@@ -2,11 +2,20 @@ from graphics import *
 
 
 class MyGraphWin:
-    def __init__(self, name, width, heigth):
-        self.win = GraphWin(name, width, heigth)
+    def __init__(self, name, width, height):
+        self.win = GraphWin(name, width, height)
         self.win.setBackground("white")
         self.title = Text(Point(self.win.width / 2, self.win.height / 16), "PID settings")
         self.no_conn = Text(Point(self.win.width / 2, self.win.height / 2), "GASPER not connected")
+
+    def display(self, s, butt):  # takes a list of settings and buttoms
+        self.title.draw(self.win)
+        r = Setting('tmp', self.win.width / 2, self.win.width * 7 / 8, "")
+        r.draw(self)
+        for i in s:
+            i.draw(self)
+        for i in butt:
+            i.draw(self)
 
 
 class ServoSettings:
@@ -21,13 +30,10 @@ class ServoSettings:
         self.D.draw(w)
 
 
-class Setting:
+class Setting:  # textbox
     def __init__(self, name,  x, y, val):
         self.name = name
         # self.servoNum = num
-        self.x = x
-        self.y = y
-        self.val = val
         self.obj = Entry(Point(x, y), 5)
         self.obj.setText(val)
         self.title = Text(Point(x-40, y), name)
@@ -41,8 +47,15 @@ class Setting:
         self.obj.undraw()
 
     def get_val(self):
-        # add logic checking if numbers are right
-        return self.obj.getText()
+        try:
+            num = float(self.obj.getText())
+
+        except ValueError:
+            print("accepting only numbers!!!, setting to 0")
+            self.obj.setText("0")
+            num = 0
+
+        return num
 
 
 class Button:
@@ -62,11 +75,3 @@ def inside(point, butt):  # takes buttom object
     return ll.getX() < point.getX() < ur.getX() and ll.getY() < point.getY() < ur.getY()
 
 
-def display(w, s, butt):  # takes a list of settings and buttoms
-    w.title.draw(w.win)
-    R = Setting('tmp', w.win.width / 2, w.win.width * 7 / 8, "")
-    R.draw(w)
-    for i in s:
-        i.draw(w)
-    for i in butt:
-        i.draw(w)
